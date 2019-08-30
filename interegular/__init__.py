@@ -9,7 +9,7 @@ from typing import Iterable, Tuple
 from interegular.fsm import FSM
 from interegular.patterns import Pattern, parse_pattern, REFlags
 
-__all__ = ['FSM', 'Pattern', 'parse_pattern', 'compare_patterns', 'compare_regexes', '__version__']
+__all__ = ['FSM', 'Pattern', 'parse_pattern', 'compare_patterns', 'compare_regexes', '__version__', 'REFlags']
 
 
 def compare_regexes(*regexes: str) -> Iterable[Tuple[str, str]]:

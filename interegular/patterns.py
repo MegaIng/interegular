@@ -15,27 +15,28 @@ from interegular.utils.simple_parser import SimpleParser, nomatch
 
 __all__ = ['parse_pattern', 'Pattern']
 
-class _REFlags(Flag):
+
+class REFlags(Flag):
     CASE_INSENSITIVE = I = auto()
     SINGLE_LINE = S = auto()
     MULTILINE = M = auto()
 
 
 _flags = {
-    'i': _REFlags.I,
-    's': _REFlags.S,
-    'm': _REFlags.M,
+    'i': REFlags.I,
+    's': REFlags.S,
+    'm': REFlags.M,
 }
 
 
-def _get_flags(plus: str) -> _REFlags:
-    res = _REFlags(0)
+def _get_flags(plus: str) -> REFlags:
+    res = REFlags(0)
     for c in plus:
         res |= _flags[c]
     return res
 
 
-def _combine_flags(base: _REFlags, added: _REFlags, removed: _REFlags):
+def _combine_flags(base: REFlags, added: REFlags, removed: REFlags):
     base |= added
     base &= ~removed
     # TODO: Check for incorrect combinations (aLu)
@@ -116,9 +117,9 @@ class _CharGroup(_Repeatable):
             raise ValueError("Can not have prefix/postfix on CharGroup-level")
         insensitive = False
         if flags is not None:
-            insensitive = flags & _REFlags.CASE_INSENSITIVE
-            flags &= ~_REFlags.CASE_INSENSITIVE
-            flags &= ~_REFlags.SINGLE_LINE
+            insensitive = flags & REFlags.CASE_INSENSITIVE
+            flags &= ~REFlags.CASE_INSENSITIVE
+            flags &= ~REFlags.SINGLE_LINE
             if flags:
                 raise NotImplementedError(flags)
         if insensitive:
@@ -164,7 +165,7 @@ class __DotCls(_Repeatable):
     def to_fsm(self, alphabet=None, prefix_postfix=None, flags=None) -> FSM:
         if alphabet is None:
             alphabet = self.alphabet
-        if flags is None or not flags & _REFlags.SINGLE_LINE:
+        if flags is None or not flags & REFlags.SINGLE_LINE:
             chars = alphabet - {'\n'}
         else:
             chars = alphabet
@@ -380,8 +381,8 @@ class _Concatenation(_BasePattern):
 @dataclass(frozen=True)
 class Pattern(_Repeatable):
     options: Tuple[_BasePattern, ...]
-    added_flags: _REFlags = _REFlags(0)
-    removed_flags: _REFlags = _REFlags(0)
+    added_flags: REFlags = REFlags(0)
+    removed_flags: REFlags = REFlags(0)
 
     def __str__(self):
         return "Pattern:\n" + "\n".join(indent(str(o), '  ') for o in self.options)
@@ -417,11 +418,11 @@ class Pattern(_Repeatable):
         if prefix_postfix is None:
             prefix_postfix = self.prefix_postfix
         if flags is None:
-            flags = _REFlags(0)
+            flags = REFlags(0)
         flags = _combine_flags(flags, self.added_flags, self.removed_flags)
         return FSM.union(*(o.to_fsm(alphabet, prefix_postfix, flags) for o in self.options))
 
-    def with_flags(self, added: _REFlags, removed: _REFlags = _REFlags(0)) -> 'Pattern':
+    def with_flags(self, added: REFlags, removed: REFlags = REFlags(0)) -> 'Pattern':
         return self.__class__(self.options, added, removed)
 
 
