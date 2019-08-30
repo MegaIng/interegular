@@ -13,7 +13,7 @@ setup(
     description="a regex intersection checker",
     license="MIT",
     url='https://github.com/MegaIng/regex_intersections',
-    download_url='https://github.com/MegaIng/regex_intersections/tarball/master',
+    download_url='https://github.com/MegaIng/interegular/archive/v0.1.tar.gz',
     classifiers=[
         "License :: OSI Approved :: MIT License",
         "Programming Language :: Python :: 3.6",
