@@ -18,14 +18,14 @@ __all__ = ['parse_pattern', 'Pattern']
 
 class REFlags(Flag):
     CASE_INSENSITIVE = I = auto()
-    SINGLE_LINE = S = auto()
     MULTILINE = M = auto()
+    SINGLE_LINE = S = auto()
 
 
 _flags = {
     'i': REFlags.I,
-    's': REFlags.S,
     'm': REFlags.M,
+    's': REFlags.S,
 }
 
 
