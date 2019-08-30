@@ -6,8 +6,8 @@ Based on the `greenery`-package by @qntm, adapted and specialized for `lark-pars
 from itertools import combinations
 from typing import Iterable, Tuple
 
-from regex_intersections.fsm import FSM
-from regex_intersections.patterns import Pattern, parse_pattern
+from interegular.fsm import FSM
+from interegular.patterns import Pattern, parse_pattern, REFlags
 
 __all__ = ['FSM', 'Pattern', 'parse_pattern', 'compare_patterns', 'compare_regexes', '__version__']
 

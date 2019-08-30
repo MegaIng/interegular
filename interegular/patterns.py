@@ -10,11 +10,10 @@ from enum import Flag, auto
 from textwrap import indent
 from typing import Iterable, FrozenSet, Optional, Tuple, Union
 
-from regex_intersections.fsm import FSM, anything_else, epsilon
-from regex_intersections.utils.simple_parser import SimpleParser, nomatch
+from interegular.fsm import FSM, anything_else, epsilon
+from interegular.utils.simple_parser import SimpleParser, nomatch
 
-
-__all__ = ['parse_pattern','Pattern']
+__all__ = ['parse_pattern', 'Pattern']
 
 class _REFlags(Flag):
     CASE_INSENSITIVE = I = auto()
@@ -155,7 +154,7 @@ def _combine_char_groups(*groups: _CharGroup, negate):
     neg = set().union(*(g.chars for g in groups if g.negated))
     if negate:
         return _CharGroup(frozenset(neg - pos), False)
-        else:
+    else:
         return _CharGroup(frozenset(pos - neg), False)
 
 

@@ -1,12 +1,12 @@
 from setuptools import setup
 import re
 
-__version__, = re.findall('__version__ = "(.*)"', open('regex_intersections/__init__.py').read())
+__version__, = re.findall('__version__ = "(.*)"', open('interegular/__init__.py').read())
 
 setup(
-    name='regex_intersections',
+    name='interegular',
     version=__version__,
-    packages=['regex_intersection', 'regex_intersections.utils'],
+    packages=['interegular', 'interegular.utils'],
     install_requires=['dataclasses; python_version<"3.7"'],
     author='MegaIng',
     author_email='MegaIng <trampchamp@hotmail.de>',
