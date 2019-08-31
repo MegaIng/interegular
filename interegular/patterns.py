@@ -11,9 +11,17 @@ from textwrap import indent
 from typing import Iterable, FrozenSet, Optional, Tuple, Union
 
 from interegular.fsm import FSM, anything_else, epsilon
-from interegular.utils.simple_parser import SimpleParser, nomatch
+from interegular.utils.simple_parser import SimpleParser, nomatch, NoMatch
 
 __all__ = ['parse_pattern', 'Pattern']
+
+
+class Unsupported(Exception):
+    pass
+
+
+class InvalidSyntax(Exception):
+    pass
 
 
 class REFlags(Flag):
@@ -32,7 +40,10 @@ _flags = {
 def _get_flags(plus: str) -> REFlags:
     res = REFlags(0)
     for c in plus:
-        res |= _flags[c]
+        try:
+            res |= _flags[c]
+        except KeyError:
+            raise Unsupported(f"Flag {c} is not implemented")
     return res
 
 
@@ -121,7 +132,7 @@ class _CharGroup(_Repeatable):
             flags &= ~REFlags.CASE_INSENSITIVE
             flags &= ~REFlags.SINGLE_LINE
             if flags:
-                raise NotImplementedError(flags)
+                raise Unsupported(flags)
         if insensitive:
             chars = frozenset({*(c.lower() for c in self.chars), *(c.upper() for c in self.chars)})
         else:
@@ -353,7 +364,7 @@ class _Concatenation(_BasePattern):
             if isinstance(part, _NonCapturing):
                 inner = part.inner.to_fsm(alphabet, (0, 0), flags)
                 if part.backwards:
-                    raise NotImplementedError("lookbacks are not implemented")
+                    raise Unsupported("lookbacks are not implemented")
                 else:
                     # try:
                     #     inner.cardinality()
@@ -372,7 +383,7 @@ class _Concatenation(_BasePattern):
             else:
                 assert isinstance(m, _NonCapturing) and not m.backwards
                 if m.negate:
-                    result = result.difference(f)
+                    result = result.difference(f + all_star)  # TODO: This does not feel right...
                 else:
                     result = result.intersection(f + all_star)
         return result
@@ -441,6 +452,12 @@ class _ParsePattern(SimpleParser[Pattern]):
         super(_ParsePattern, self).__init__(data)
         self.flags = None
 
+    def parse(self):
+        try:
+            return super(_ParsePattern, self).parse()
+        except NoMatch:
+            raise InvalidSyntax
+
     def start(self):
         self.flags = None
         p = self.pattern()
@@ -508,7 +525,7 @@ class _ParsePattern(SimpleParser[Pattern]):
                 self.static(")")
                 return self.repetition(p)
             elif self.static_b('='):
-                raise NotImplementedError("Group references are not implemented")
+                raise Unsupported("Group references are not implemented")
         elif c == '#':
             while not self.static_b(')'):
                 self.any()
@@ -531,7 +548,7 @@ class _ParsePattern(SimpleParser[Pattern]):
                 self.static(")")
                 return _NonCapturing(p, True, True)
         elif c == '(':
-            raise NotImplementedError("Conditional matching is not implmented")
+            raise Unsupported("Conditional matching is not implemented")
         else:
             raise ValueError(f"Unknown group-extension: {c!r} (Context: {self.data[self.index - 3:self.index + 5]!r}")
 
@@ -603,7 +620,7 @@ class _ParsePattern(SimpleParser[Pattern]):
             except nomatch:
                 pass
             else:
-                raise NotImplementedError("Group references are not implemented")
+                raise Unsupported("Group references are not implemented")
         else:
             try:
                 n = self.multiple("01234567", 1, 3)
@@ -618,7 +635,7 @@ class _ParsePattern(SimpleParser[Pattern]):
             except nomatch:
                 pass
             else:
-                raise NotImplementedError(f"Escape \\{c} is not implemented")
+                raise Unsupported(f"Escape \\{c} is not implemented")
         try:
             c = self.anyof(*_CHAR_GROUPS)
         except nomatch:
@@ -643,7 +660,8 @@ class _ParsePattern(SimpleParser[Pattern]):
                 break
         self.static("]")
         if len(groups) == 1:
-            return tuple(groups)[0]
+            f = tuple(groups)[0]
+            return _CharGroup(f.chars, negate)
         elif len(groups) == 0:
             return _CharGroup(frozenset({}), negate)
         else:

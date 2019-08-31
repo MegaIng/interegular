@@ -5,6 +5,8 @@ A small util to simplify the creation of Parsers for simple context-free-grammar
 
 from abc import ABC, abstractmethod
 from collections import defaultdict
+from functools import wraps
+from types import FunctionType, MethodType
 from typing import Generic, TypeVar, Optional, List
 
 __all__ = ['nomatch', 'NoMatch', 'SimpleParser']
@@ -28,11 +30,29 @@ class NoMatch(ValueError):
 T = TypeVar('T')
 
 
+def _wrap_reset(m):
+    @wraps(m)
+    def w(self, *args, **kwargs):
+        p = self.index
+        try:
+            return m(self, *args, **kwargs)
+        except nomatch:
+            self.index = p
+            raise
+
+    return w
+
+
 class SimpleParser(Generic[T], ABC):
     def __init__(self, data: str):
         self.data = data
         self.index = 0
         self._expected = defaultdict(list)
+
+    def __init_subclass__(cls, **kwargs):
+        for n, v in cls.__dict__.items():
+            if isinstance(v, FunctionType) and not n.startswith('_'):
+                setattr(cls, n, _wrap_reset(v))
 
     def parse(self) -> T:
         try:
@@ -95,27 +115,36 @@ class SimpleParser(Generic[T], ABC):
 
     def multiple(self, chars: str, mi: int, ma: Optional[int]) -> str:
         result = []
-        for off in range(mi):
-            if self.data[self.index + off] in chars:
-                result.append(self.data[self.index + off])
-            else:
-                self._expected[self.index + off].extend(chars)
-                raise nomatch
+        try:
+            for off in range(mi):
+                if self.data[self.index + off] in chars:
+                    result.append(self.data[self.index + off])
+                else:
+                    self._expected[self.index + off].extend(chars)
+                    raise nomatch
+        except IndexError:
+            raise nomatch
         self.index += mi
         if ma is None:
-            while True:
-                if self.data[self.index] in chars:
-                    result.append(self.data[self.index])
-                    self.index += 1
-                else:
-                    self._expected[self.index].extend(chars)
-                    break
+            try:
+                while True:
+                    if self.data[self.index] in chars:
+                        result.append(self.data[self.index])
+                        self.index += 1
+                    else:
+                        self._expected[self.index].extend(chars)
+                        break
+            except IndexError:
+                pass
         else:
-            for _ in range(ma - mi):
-                if self.data[self.index] in chars:
-                    result.append(self.data[self.index])
-                    self.index += 1
-                else:
-                    self._expected[self.index].extend(chars)
-                    break
+            try:
+                for _ in range(ma - mi):
+                    if self.data[self.index] in chars:
+                        result.append(self.data[self.index])
+                        self.index += 1
+                    else:
+                        self._expected[self.index].extend(chars)
+                        break
+            except IndexError:
+                pass
         return ''.join(result)
