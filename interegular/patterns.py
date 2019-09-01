@@ -95,6 +95,10 @@ class _BasePattern(ABC):
             super(_BasePattern, self).__setattr__('_lengths_cache', self._get_lengths())
         return self._lengths_cache
 
+    @abstractmethod
+    def simplify(self) -> '_BasePattern':
+        raise NotImplementedError
+
 
 class _Repeatable(_BasePattern, ABC):
     pass
@@ -160,6 +164,9 @@ class _CharGroup(_Repeatable):
             map=mapping,
         )
 
+    def simplify(self) -> '_CharGroup':
+        return self
+
 
 def _combine_char_groups(*groups: _CharGroup, negate):
     pos = set().union(*(g.chars for g in groups if not g.negated))
@@ -198,6 +205,9 @@ class __DotCls(_Repeatable):
     def _get_lengths(self) -> Tuple[int, Optional[int]]:
         return 1, 1
 
+    def simplify(self) -> '__DotCls':
+        return self
+
 
 @dataclass(frozen=True)
 class __EmptyCls(_BasePattern):
@@ -215,6 +225,9 @@ class __EmptyCls(_BasePattern):
 
     def _get_lengths(self) -> Tuple[int, Optional[int]]:
         return 0, 0
+
+    def simplify(self) -> '__EmptyCls':
+        return self
 
 
 _DOT = __DotCls()
@@ -279,6 +292,9 @@ class _Repeated(_BasePattern):
             optional *= (self.max - self.min)
         return mandatory + optional
 
+    def simplify(self) -> '_Repeated':
+        return self.__class__(self.base.simplify(), self.min, self.max)
+
 
 _ALL_STAR = _Repeated(_ALL, 0, None)
 
@@ -295,6 +311,9 @@ class _NonCapturing:
     @property
     def alphabet(self):
         return self.inner.alphabet
+
+    def simplify(self) -> '_NonCapturing':
+        return self.__class__(self.inner.simplify(), self.backwards, self.negate)
 
 
 @dataclass(frozen=True)
@@ -320,7 +339,7 @@ class _Concatenation(_BasePattern):
             elif p.backwards:
                 a, b = p.inner.lengths
                 if a != b:
-                    raise ValueError(f"lookbacks have to have fixed length {(a, b)}")
+                    raise InvalidSyntax(f"lookbacks have to have fixed length {(a, b)}")
                 req = a - off
                 if req > pre:
                     pre = req
@@ -353,8 +372,8 @@ class _Concatenation(_BasePattern):
             alphabet = self.alphabet
         if prefix_postfix is None:
             prefix_postfix = self.prefix_postfix
-        if prefix_postfix[0] < self.prefix_postfix[0] and prefix_postfix[1] < self.prefix_postfix[1]:
-            raise ValueError("Group can not have lookbacks/lookaheads that go beyond the group bounds.")
+        if prefix_postfix[0] < self.prefix_postfix[0] or prefix_postfix[1] < self.prefix_postfix[1]:
+            raise Unsupported("Group can not have lookbacks/lookaheads that go beyond the group bounds.")
 
         all_ = _ALL.to_fsm(alphabet)
         all_star = all_.star()
@@ -387,6 +406,9 @@ class _Concatenation(_BasePattern):
                 else:
                     result = result.intersection(f + all_star)
         return result
+
+    def simplify(self) -> '_Concatenation':
+        return self.__class__(tuple(p.simplify() for p in self.parts))
 
 
 @dataclass(frozen=True)
@@ -435,6 +457,16 @@ class Pattern(_Repeatable):
 
     def with_flags(self, added: REFlags, removed: REFlags = REFlags(0)) -> 'Pattern':
         return self.__class__(self.options, added, removed)
+
+    def simplify(self) -> 'Pattern':
+        if len(self.options) == 1:
+            o = self.options[0]
+            if isinstance(o, _Concatenation) and len(o.parts) == 1 and isinstance(o.parts[0], Pattern):
+                p: Pattern = o.parts[0].simplify()
+                f = _combine_flags(_combine_flags(REFlags(0), self.added_flags, self.removed_flags),
+                                   p.added_flags, p.removed_flags)
+                return p.with_flags(f)
+        return self.__class__(tuple(o.simplify() for o in self.options), self.added_flags, self.removed_flags)
 
 
 class _ParsePattern(SimpleParser[Pattern]):
@@ -550,7 +582,8 @@ class _ParsePattern(SimpleParser[Pattern]):
         elif c == '(':
             raise Unsupported("Conditional matching is not implemented")
         else:
-            raise ValueError(f"Unknown group-extension: {c!r} (Context: {self.data[self.index - 3:self.index + 5]!r}")
+            raise InvalidSyntax(
+                f"Unknown group-extension: {c!r} (Context: {self.data[self.index - 3:self.index + 5]!r}")
 
     def atom(self):
         if self.static_b("["):
@@ -559,6 +592,10 @@ class _ParsePattern(SimpleParser[Pattern]):
             return self.repetition(self.escaped())
         elif self.static_b("."):
             return self.repetition(_DOT)
+        elif self.static_b("$"):
+            raise Unsupported("'$'")
+        elif self.static_b("^"):
+            raise Unsupported("'^'")
         else:
             c = self.any_but(*self.SPECIAL_CHARS_STANDARD)
             return self.repetition(_CharGroup(frozenset({c}), False))
@@ -678,15 +715,17 @@ class _ParsePattern(SimpleParser[Pattern]):
                 end = self.escaped(True)
             else:
                 end = _CharGroup(frozenset(self.any_but(*self.SPECIAL_CHARS_INNER)), False)
-            if len(base.chars) != len(end.chars) != 1:
-                raise ValueError(f"Invalid Character-range: {self.data[start:self.index]}")
+            if len(base.chars) != 1 or len(end.chars) != 1:
+                raise InvalidSyntax(f"Invalid Character-range: {self.data[start:self.index]}")
             low, high = ord(*base.chars), ord(*end.chars)
             if low > high:
-                raise ValueError(f"Invalid Character-range: {self.data[start:self.index]}")
+                raise InvalidSyntax(f"Invalid Character-range: {self.data[start:self.index]}")
             return _CharGroup(frozenset((chr(i) for i in range(low, high + 1))), False)
         return base
 
 
 def parse_pattern(pattern: str) -> Pattern:
     p = _ParsePattern(pattern)
-    return p.parse()
+    out = p.parse()
+    out = out.simplify()
+    return out
