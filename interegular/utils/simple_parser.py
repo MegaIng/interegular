@@ -67,6 +67,14 @@ class SimpleParser(Generic[T], ABC):
     def start(self) -> T:
         raise NotImplementedError
 
+    def peek_static(self, expected: str) -> bool:
+        l = len(expected)
+        if self.data[self.index:self.index + l] == expected:
+            return True
+        else:
+            self._expected[self.index].append(expected)
+            return False
+
     def static(self, expected: str):
         length = len(expected)
         if self.data[self.index:self.index + length] == expected:

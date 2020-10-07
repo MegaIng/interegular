@@ -2,3 +2,4 @@ dist/*
 out/*
 interegular.egg-info/*
 .idea/*
+.pypirc

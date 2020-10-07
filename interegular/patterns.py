@@ -13,7 +13,7 @@ from typing import Iterable, FrozenSet, Optional, Tuple, Union
 from interegular.fsm import FSM, anything_else, epsilon
 from interegular.utils.simple_parser import SimpleParser, nomatch, NoMatch
 
-__all__ = ['parse_pattern', 'Pattern']
+__all__ = ['parse_pattern', 'Pattern', 'Unsupported', 'InvalidSyntax', 'REFlags']
 
 
 class Unsupported(Exception):
@@ -713,6 +713,8 @@ class _ParsePattern(SimpleParser[Pattern]):
         if self.static_b('-'):
             if self.static_b('\\'):
                 end = self.escaped(True)
+            elif self.peek_static(']'):
+                return _combine_char_groups(base, _CharGroup(frozenset('-'), False), negate=False)
             else:
                 end = _CharGroup(frozenset(self.any_but(*self.SPECIAL_CHARS_INNER)), False)
             if len(base.chars) != 1 or len(end.chars) != 1:

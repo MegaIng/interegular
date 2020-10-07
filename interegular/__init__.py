@@ -3,36 +3,31 @@ A package to compare python-style regexes and test if they have intersections.
 Based on the `greenery`-package by @qntm, adapted and specialized for `lark-parser`
 """
 
-from itertools import combinations
 from typing import Iterable, Tuple
 
 from interegular.fsm import FSM
-from interegular.patterns import Pattern, parse_pattern, REFlags
+from interegular.patterns import Pattern, parse_pattern, REFlags, Unsupported, InvalidSyntax
+from interegular.comparator import Comparator
+from interegular.utils import logger
 
-__all__ = ['FSM', 'Pattern', 'parse_pattern', 'compare_patterns', 'compare_regexes', '__version__', 'REFlags']
+__all__ = ['FSM', 'Pattern', 'Comparator', 'parse_pattern', 'compare_patterns', 'compare_regexes', '__version__', 'REFlags', 'Unsupported',
+           'InvalidSyntax']
 
 
 def compare_regexes(*regexes: str) -> Iterable[Tuple[str, str]]:
     """
-    Compiles the regexes to Patterns and then calls `compare_patterns` to check for intersections.
-    If it finds some, returns a tuple with the two original regex-strings.
+    Checks the regexes for intersections. Returns all pairs it found
     """
-    ps = {parse_pattern(r): r for r in regexes}
-    yield from ((ps[a], ps[b]) for a, b in compare_patterns(*ps))
+    c = Comparator({r: parse_pattern(r) for r in regexes})
+    return c.check(regexes)
 
 
 def compare_patterns(*ps: Pattern) -> Iterable[Tuple[Pattern, Pattern]]:
     """
-    Compiles the Patterns to FSM and then checks them for intersections.
-    If it finds some, returns a tuple with the two original Patterns.
+    Checks the Patterns for intersections. Returns all pairs it found
     """
-    alphabet = frozenset(c for p in ps for c in p.alphabet)
-    prefix_postfix_s = [p.prefix_postfix for p in ps]
-    prefix_postfix = max(p[0] for p in prefix_postfix_s), max(p[1] for p in prefix_postfix_s)
-    fsms = [(p, p.to_fsm(alphabet, prefix_postfix)) for p in ps]
-    for (ka, fa), (kb, fb) in combinations(fsms, 2):
-        if not fa.isdisjoint(fb):
-            yield (ka, kb)
+    c = Comparator({p: p for p in ps})
+    return c.check(ps)
 
 
-__version__ = "0.1"
+__version__ = "0.2.0"
