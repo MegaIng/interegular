@@ -99,6 +99,13 @@ class SimpleParser(Generic[T], ABC):
         else:
             raise nomatch
 
+    def anyof_b(self, *strings: str) -> bool:
+        for s in strings:
+            if self.static_b(s):
+                return True
+        else:
+            return False
+
     def any(self, length: int = 1) -> str:
         if self.index + length <= len(self.data):
             res = self.data[self.index:self.index + length]

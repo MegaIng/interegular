@@ -471,10 +471,10 @@ class Pattern(_Repeatable):
 
 class _ParsePattern(SimpleParser[Pattern]):
     SPECIAL_CHARS_STANDARD: FrozenSet[str] = frozenset({
-        '+', '?', '*', '.', '$', '^', '\\', '(', ')', '[', ']', '{', '}', '|'
+        '+', '?', '*', '.', '$', '^', '\\', '(', ')', '[', '|'
     })
     SPECIAL_CHARS_INNER: FrozenSet[str] = frozenset({
-        '\\', '[', ']'
+        '\\', ']'
     })
     RESERVED_ESCAPES: FrozenSet[str] = frozenset({
         'u', 'U', 'A', 'Z', 'b', 'B'
@@ -637,13 +637,15 @@ class _ParsePattern(SimpleParser[Pattern]):
 
     def escaped(self, inner=False):
         if self.static_b("x"):
-            n = self.multiple("0123456789", 2, 2)
+            n = self.multiple("0123456789abcdefABCDEF", 2, 2)
             c = chr(int(n, 16))
             return _CharGroup(frozenset({c}), False)
         if self.static_b("0"):
             n = self.multiple("01234567", 1, 2)
             c = chr(int(n, 8))
             return _CharGroup(frozenset({c}), False)
+        if self.anyof_b('N', 'p', 'P', 'u', 'U'):
+            raise Unsupported('regex module unicode properties are not supported.')
         if not inner:
             try:
                 n = self.multiple("01234567", 3, 3)

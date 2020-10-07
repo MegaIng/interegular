@@ -9,6 +9,8 @@ from interegular.utils import logger
 class Comparator:
     def __init__(self, patterns: Dict[Any, Pattern]):
         self._patterns = patterns
+        if not patterns:  # `isdisjoint` can not be called anyway, so we don't need to create a valid state
+            return
         self._alphabet = frozenset.union(*(p.alphabet for p in patterns.values()))
         prefix_postfix_s = [p.prefix_postfix for p in patterns.values()]
         self._prefix_postfix = max(p[0] for p in prefix_postfix_s), max(p[1] for p in prefix_postfix_s)
@@ -23,6 +25,8 @@ class Comparator:
             except Unsupported as e:
                 self._fsms[a] = None
                 logger.warning(f"Can't compile Pattern to fsm for {a}\n     {repr(e)}")
+            except KeyError:
+                self._fsms[a] = None # In case it was thrown away in `from_regexes`
         return self._fsms[a]
 
     def isdisjoint(self, a: Any, b: Any) -> bool:
@@ -47,4 +51,10 @@ class Comparator:
 
     @classmethod
     def from_regexes(cls, regexes: Dict[Any, str]):
-        return cls({k: parse_pattern(r) for k, r in regexes.items()})
+        patterns = {}
+        for k, r in regexes.items():
+            try:
+                patterns[k] = parse_pattern(r)
+            except Unsupported as e:
+                logger.warning(f"Can't compile regex to Pattern for {k}\n     {repr(e)}")
+        return cls(patterns)
