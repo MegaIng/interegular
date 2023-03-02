@@ -2,6 +2,7 @@ from collections import namedtuple
 from itertools import combinations
 from typing import List, Tuple, Any, Dict, Iterable, Set
 
+from interegular import InvalidSyntax
 from interegular.fsm import FSM
 from interegular.patterns import Pattern, Unsupported, parse_pattern
 from interegular.utils import logger
@@ -69,6 +70,6 @@ class Comparator:
         for k, r in regexes.items():
             try:
                 patterns[k] = parse_pattern(r)
-            except Unsupported as e:
+            except (Unsupported, InvalidSyntax) as e:
                 logger.warning(f"Can't compile regex to Pattern for {k}\n     {repr(e)}")
         return cls(patterns)

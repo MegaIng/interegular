@@ -12,6 +12,7 @@ setup(
     name='interegular',
     version=__version__,
     packages=['interegular', 'interegular.utils'],
+    package_data={'interegular': ['py.typed']},
     install_requires=['dataclasses; python_version<"3.7"'],
     python_requires=">=3.6",
     author='MegaIng',
