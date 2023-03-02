@@ -147,13 +147,13 @@ class _CharGroup(_Repeatable):
         # If negated, make a singular FSM accepting any other characters
         if self.negated:
             mapping = {
-                0: dict([(symbol, 1) for symbol in alphabet - chars]),
+                0: {symbol: 1 for symbol in alphabet - chars},
             }
 
         # If normal, make a singular FSM accepting only these characters
         else:
             mapping = {
-                0: dict([(symbol, 1) for symbol in chars]),
+                0: {symbol: 1 for symbol in chars},
             }
 
         return FSM(

@@ -1,9 +1,13 @@
+from collections import namedtuple
 from itertools import combinations
 from typing import List, Tuple, Any, Dict, Iterable, Set
 
 from interegular.fsm import FSM
 from interegular.patterns import Pattern, Unsupported, parse_pattern
 from interegular.utils import logger
+
+
+Example = namedtuple("Example", "prefix main_text postfix")
 
 
 class Comparator:
@@ -38,16 +42,26 @@ class Comparator:
                 self._know_pairs[a, b] = fa.isdisjoint(fb)
         return self._know_pairs[a, b]
 
-    def check(self, keys: Iterable[Any]) -> Iterable[Tuple[Any, Any]]:
+    def check(self, keys: Iterable[Any], skip_marked: bool = False) -> Iterable[Tuple[Any, Any]]:
         for a, b in combinations(keys, 2):
+            if skip_marked and self.is_marked(a,b):
+                continue
             if not self.isdisjoint(a, b):
                 yield a, b
 
+    def get_example_overlap(self, a: Any, b: Any) -> Example:
+        fa, fb = self.get_fsm(a), self.get_fsm(b)
+        intersection = fa.intersection(fb)
+        text = ''.join(next(intersection.strings()))
+        i, j = self._prefix_postfix
+        return Example(text[:i], text[i:-j], text[-j])
+
+
     def is_marked(self, a: Any, b: Any) -> bool:
-        return (a, b) in self._marked_pairs
+        return frozenset({a, b}) in self._marked_pairs
 
     def mark(self, a: Any, b: Any):
-        self._marked_pairs.add((a, b))
+        self._marked_pairs.add(frozenset({a, b}))
 
     @classmethod
     def from_regexes(cls, regexes: Dict[Any, str]):
