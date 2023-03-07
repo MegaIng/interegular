@@ -1,17 +1,71 @@
 from collections import namedtuple
+from dataclasses import dataclass
 from itertools import combinations
-from typing import List, Tuple, Any, Dict, Iterable, Set
+from typing import List, Tuple, Any, Dict, Iterable, Set, FrozenSet, Optional
 
 from interegular import InvalidSyntax
 from interegular.fsm import FSM
 from interegular.patterns import Pattern, Unsupported, parse_pattern
-from interegular.utils import logger
+from interegular.utils import logger, per_char_repr
 
 
-Example = namedtuple("Example", "prefix main_text postfix")
+@dataclass
+class ExampleCollision:
+    """
+    Captures the full text of an example collision between two regex.
+    `main_text` is the part that actually gets captured by the two regex
+    `prefix` is the part that is potentially needed for lookbehinds
+    `postfix` is the part that is potentially needed for lookahead
+    """
+    prefix: str
+    main_text: str
+    postfix: str
+
+    def format_multiline(self, intro: str = "Example Collision: ", indent: str = "",
+                         force_pointer: bool = False) -> str:
+        """
+        Formats this example somewhat similar to a python syntax error.
+        - intro is added on the first line
+        - indent is added on the second line
+        The three parts of the example are concatenated and `^` is used to underline them.
+
+        ExampleCollision(prefix='a', main_text='cd', postfix='ef').format_multiline()
+
+        leads to
+
+        Example Collision: acdef
+                             ^^
+
+        This function will escape the character where necessary to stay readable.
+        if `force_pointer` is False, the function will not produce the second line if only main_text is set
+        """
+        if len(intro) < len(indent):
+            raise ValueError("Can't have intro be shorter than indent")
+        prefix = per_char_repr(self.prefix)
+        main_text = per_char_repr(self.main_text)
+        postfix = per_char_repr(self.postfix)
+        text = f"{prefix}{main_text}{postfix}"
+        if len(text) != len(main_text):
+            whitespace = ' ' * (len(intro) - len(indent) + len(prefix))
+            pointers = '^' * len(main_text)
+            return f"{intro}{text}\n{indent}{whitespace}{pointers}"
+        else:
+            return f"{intro}{text}"
 
 
 class Comparator:
+    """
+    A class that represents the main interface for comparing a list of regex to each other.
+    It expects a dictionary of arbitrary labels mapped to `Pattern` instances,
+    but there is a utility function to create the instances `from_regex` strings.
+
+    The main interface function all expect the abitrary labels to be given, which
+    then get mapped to the correct `Pattern` and/or `FSM` instance.
+
+    There is a utility function `mark(a,b)` which allows to mark pairs that shouldn't
+    be checked again by `check`.
+    """
+
     def __init__(self, patterns: Dict[Any, Pattern]):
         self._patterns = patterns
         if not patterns:  # `isdisjoint` can not be called anyway, so we don't need to create a valid state
@@ -21,7 +75,7 @@ class Comparator:
         self._prefix_postfix = max(p[0] for p in prefix_postfix_s), max(p[1] for p in prefix_postfix_s)
         self._fsms: Dict[Any, FSM] = {}
         self._know_pairs: Dict[Tuple[Any, Any], bool] = {}
-        self._marked_pairs: Set[Tuple[Any, Any]] = set()
+        self._marked_pairs: Set[FrozenSet[Any]] = set()
 
     def get_fsm(self, a: Any) -> FSM:
         if a not in self._fsms:
@@ -31,7 +85,7 @@ class Comparator:
                 self._fsms[a] = None
                 logger.warning(f"Can't compile Pattern to fsm for {a}\n     {repr(e)}")
             except KeyError:
-                self._fsms[a] = None # In case it was thrown away in `from_regexes`
+                self._fsms[a] = None  # In case it was thrown away in `from_regexes`
         return self._fsms[a]
 
     def isdisjoint(self, a: Any, b: Any) -> bool:
@@ -43,20 +97,34 @@ class Comparator:
                 self._know_pairs[a, b] = fa.isdisjoint(fb)
         return self._know_pairs[a, b]
 
-    def check(self, keys: Iterable[Any], skip_marked: bool = False) -> Iterable[Tuple[Any, Any]]:
+    def check(self, keys: Iterable[Any] = None, skip_marked: bool = False) -> Iterable[Tuple[Any, Any]]:
+        if keys is None:
+            keys = self._patterns
         for a, b in combinations(keys, 2):
-            if skip_marked and self.is_marked(a,b):
+            if skip_marked and self.is_marked(a, b):
                 continue
             if not self.isdisjoint(a, b):
                 yield a, b
 
-    def get_example_overlap(self, a: Any, b: Any) -> Example:
+    def get_example_overlap(self, a: Any, b: Any) -> ExampleCollision:
+        pa, pb = self._patterns[a], self._patterns[b]
         fa, fb = self.get_fsm(a), self.get_fsm(b)
         intersection = fa.intersection(fb)
-        text = ''.join(next(intersection.strings()))
-        i, j = self._prefix_postfix
-        return Example(text[:i], text[i:-j], text[-j])
-
+        try:
+            text = ''.join(next(intersection.strings()))
+        except StopIteration:
+            raise ValueError(f"No overlap between {a} and {b} exists")
+        needed_pre = max(pa.prefix_postfix[0], pb.prefix_postfix[0])
+        needed_post = max(pa.prefix_postfix[1], pb.prefix_postfix[1])
+        global_pre, global_post = self._prefix_postfix
+        if needed_pre < global_pre:
+            text = text[global_pre - needed_pre:]
+        if needed_post < global_post:
+            text = text[:-(global_post - needed_post)]
+        if needed_post > 0:
+            return ExampleCollision(text[:needed_pre], text[needed_pre:-needed_post], text[-needed_post:])
+        else:
+            return ExampleCollision(text[:needed_pre], text[needed_pre:], '')
 
     def is_marked(self, a: Any, b: Any) -> bool:
         return frozenset({a, b}) in self._marked_pairs
