@@ -1,13 +1,18 @@
 """
     Finite state machine library, extracted from `greenery.fsm` and adapted by MegaIng
 """
-from typing import Any, Set, Dict
+from collections import defaultdict
+from functools import total_ordering
+from typing import Any, Set, Dict, Union, NewType, Mapping, Tuple, Iterable
+
+from interegular.utils import soft_repr
 
 
 class _Marker(BaseException):
     pass
 
 
+@total_ordering
 class _AnythingElseCls:
     """
         This is a surrogate symbol which you can use in your finite state machines
@@ -23,15 +28,126 @@ class _AnythingElseCls:
     def __repr__(self):
         return "anything_else"
 
+    def __lt__(self, other):
+        return False
+
+    def __eq__(self, other):
+        return self is other
+
+    def __hash__(self):
+        return hash(id(self))
+
 
 # We use a class instance because that gives us control over how the special
 # value gets serialised. Otherwise this would just be `object()`.
 anything_else = _AnythingElseCls()
 
 
-def key(symbol):
-    """Ensure `fsm.anything_else` always sorts last"""
-    return symbol is anything_else, symbol
+def nice_char_group(chars: Iterable[Union[str, _AnythingElseCls]]):
+    out = []
+    current_range = []
+    for c in sorted(chars):
+        if c is not anything_else and current_range and ord(current_range[-1]) + 1 == ord(c):
+            current_range.append(c)
+            continue
+        if len(current_range) >= 2:
+            out.append(f"{soft_repr(current_range[0])}-{soft_repr(current_range[-1])}")
+        else:
+            out.extend(map(soft_repr, current_range))
+        current_range = [c]
+    if len(current_range) >= 2:
+        out.append(f"{soft_repr(current_range[0])}-{soft_repr(current_range[-1])}")
+    else:
+        out.extend(map(soft_repr, current_range))
+    return ','.join(out)
+
+
+State = NewType("State", int)
+TransitionKey = NewType("TransitionKey", int)
+
+
+class Alphabet(Mapping[Any, TransitionKey]):
+    @property
+    def by_transition(self):
+        return self._by_transition
+
+    def __str__(self):
+        out = []
+        width = 0
+        for tk, symbols in sorted(self._by_transition.items()):
+            out.append((nice_char_group(symbols), str(tk)))
+            if len(out[-1][0]) > width:
+                width = len(out[-1][0])
+        return '\n'.join(f"{a:{width}} | {b}" for a, b in out)
+
+    def __repr__(self):
+        return f"{type(self).__name__}({self._symbol_mapping!r})"
+
+    def __len__(self) -> int:
+        return len(self._symbol_mapping)
+
+    def __iter__(self):
+        return iter(self._symbol_mapping)
+
+    def __init__(self, symbol_mapping: dict[Union[str, _AnythingElseCls], TransitionKey]):
+        self._symbol_mapping = symbol_mapping
+        by_transition = defaultdict(list)
+        for s, t in self._symbol_mapping.items():
+            by_transition[t].append(s)
+        self._by_transition = dict(by_transition)
+
+    def __getitem__(self, item):
+        if item not in self._symbol_mapping:
+            if anything_else in self._symbol_mapping:
+                return self._symbol_mapping[anything_else]
+            else:
+                return None
+        else:
+            return self._symbol_mapping[item]
+
+    def __contains__(self, item):
+        return item in self._symbol_mapping
+
+    def union(*alphabets: 'Alphabet') -> 'Tuple[Alphabet, tuple[dict[TransitionKey, TransitionKey], ...]]':
+        all_symbols = frozenset().union(*(a._symbol_mapping.keys() for a in alphabets))
+        symbol_to_keys = {symbol: tuple(a[symbol] for a in alphabets) for symbol in all_symbols}
+        keys_to_symbols = defaultdict(list)
+        for symbol, keys in symbol_to_keys.items():
+            keys_to_symbols[keys].append(symbol)
+        keys_to_key = {k: i for i, k in enumerate(keys_to_symbols)}
+        result = Alphabet({symbol: keys_to_key[keys]
+                           for keys, symbols in keys_to_symbols.items()
+                           for symbol in symbols})
+        new_to_old_mappings = [{} for _ in alphabets]
+        for keys, new_key in keys_to_key.items():
+            for old_key, new_to_old in zip(keys, new_to_old_mappings):
+                new_to_old[new_key] = old_key
+        return result, tuple(new_to_old_mappings)
+
+    @classmethod
+    def from_groups(cls, *groups):
+        return Alphabet({s: TransitionKey(i) for i, group in enumerate(groups) for s in group})
+
+    def intersect(self, other: 'Alphabet') -> 'tuple[Alphabet, tuple[dict[TransitionKey, TransitionKey], ...]]':
+        all_symbols = frozenset(self._symbol_mapping).intersection(other._symbol_mapping)
+        symbol_to_keys = {symbol: tuple(a[symbol] for a in (self, other)) for symbol in all_symbols}
+        keys_to_symbols = defaultdict(list)
+        for symbol, keys in symbol_to_keys.items():
+            keys_to_symbols[keys].append(symbol)
+        keys_to_key = {k: i for i, k in enumerate(keys_to_symbols)}
+        result = Alphabet({symbol: keys_to_key[keys]
+                           for keys, symbols in keys_to_symbols.items()
+                           for symbol in symbols})
+        old_to_new_mappings = [defaultdict(list) for _ in (self, other)]
+        new_to_old_mappings = [{} for _ in (self, other)]
+        for keys, new_key in keys_to_key.items():
+            for old_key, old_to_new, new_to_old in zip(keys, old_to_new_mappings, new_to_old_mappings):
+                old_to_new[old_key].append(new_key)
+                new_to_old[new_key] = old_key
+        return result, tuple(new_to_old_mappings)
+
+    def copy(self):
+        return Alphabet(self._symbol_mapping.copy())
 
 
 class OblivionError(Exception):
@@ -58,17 +174,17 @@ class FSM:
         closure), intersected, and simplified.
         The majority of these methods are available using operator overloads.
     """
-    alphabet: Set[Any]
-    initial: int
-    states: Set[int]
-    finals: Set[int]
-    map: Dict[int, Dict[Any, int]]
+    alphabet: Alphabet
+    initial: State
+    states: Set[State]
+    finals: Set[State]
+    map: Dict[State, Dict[TransitionKey, State]]
 
     def __setattr__(self, name, value):
         """Immutability prevents some potential problems."""
         raise Exception("This object is immutable.")
 
-    def __init__(self, alphabet, states, initial, finals, map, *, __no_validation__=False):
+    def __init__(self, alphabet: Alphabet, states, initial, finals, map, *, __no_validation__=False):
         """
             `alphabet` is an iterable of symbols the FSM can be fed.
             `states` is the set of states for the FSM
@@ -80,6 +196,8 @@ class FSM:
 
         if not __no_validation__:
             # Validation. Thanks to immutability, this only needs to be carried out once.
+            if not isinstance(alphabet, Alphabet):
+                raise TypeError("Expected an Alphabet instance")
             if not initial in states:
                 raise Exception("Initial state " + repr(initial) + " must be one of " + repr(states))
             if not finals.issubset(states):
@@ -92,13 +210,13 @@ class FSM:
                                 map[state][symbol]) + ", which is not a state")
 
         # Initialise the hard way due to immutability.
-        self.__dict__["alphabet"] = frozenset(alphabet)
+        self.__dict__["alphabet"] = alphabet
         self.__dict__["states"] = frozenset(states)
         self.__dict__["initial"] = initial
         self.__dict__["finals"] = frozenset(finals)
         self.__dict__["map"] = map
 
-    def accepts(self, input):
+    def accepts(self, input: str):
         """
             Test whether the present FSM accepts the supplied string (iterable of
             symbols). Equivalently, consider `self` as a possibly-infinite set of
@@ -111,12 +229,13 @@ class FSM:
         for symbol in input:
             if anything_else in self.alphabet and not symbol in self.alphabet:
                 symbol = anything_else
+            transition = self.alphabet[symbol]
 
             # Missing transition = transition to dead state
-            if not (state in self.map and symbol in self.map[state]):
+            if not (state in self.map and transition in self.map[state]):
                 return False
 
-            state = self.map[state][symbol]
+            state = self.map[state][transition]
         return state in self.finals
 
     def __contains__(self, string):
@@ -149,8 +268,8 @@ class FSM:
 
         # top row
         row = ["", "name", "final?"]
-        row.extend(str(symbol) if symbol not in ('\n', '\t', ' ', '\r', '\f') else repr(symbol)[1:-1]
-                   for symbol in sorted(self.alphabet, key=key))
+        # TODO maybe rework this to show transition groups instead of individual symbols
+        row.extend(soft_repr(symbol) for symbol in sorted(self.alphabet))
         rows.append(row)
 
         # other rows
@@ -165,9 +284,9 @@ class FSM:
                 row.append("True")
             else:
                 row.append("False")
-            for symbol in sorted(self.alphabet, key=key):
-                if state in self.map and symbol in self.map[state]:
-                    row.append(str(self.map[state][symbol]))
+            for symbol, transition in sorted(self.alphabet.items()):
+                if state in self.map and transition in self.map[state]:
+                    row.append(str(self.map[state][transition]))
                 else:
                     row.append("")
             rows.append(row)
@@ -192,8 +311,8 @@ class FSM:
             Concatenate arbitrarily many finite state machines together.
         """
         if len(fsms) == 0:
-            return epsilon({})
-        alphabet = frozenset().union(*[fsm.alphabet for fsm in fsms])
+            return epsilon(Alphabet({}))
+        alphabet, new_to_old = Alphabet.union(*[fsm.alphabet for fsm in fsms])
         last_index, last = len(fsms) - 1, fsms[-1]
 
         def connect_all(i, substate):
@@ -224,7 +343,7 @@ class FSM:
                     return True
             return False
 
-        def follow(current, symbol):
+        def follow(current, new_transition):
             """
                 Follow the collection of states through all FSMs at once, jumping to the
                 next FSM if we reach the end of the current one
@@ -233,8 +352,8 @@ class FSM:
             next = set()
             for (i, substate) in current:
                 fsm = fsms[i]
-                if substate in fsm.map and symbol in fsm.map[substate]:
-                    next.update(connect_all(i, fsm.map[substate][symbol]))
+                if substate in fsm.map and new_to_old[i][new_transition] in fsm.map[substate]:
+                    next.update(connect_all(i, fsm.map[substate][new_to_old[i][new_transition]]))
             if not next:
                 raise OblivionError
             return frozenset(next)
@@ -261,18 +380,18 @@ class FSM:
 
         initial = {self.initial}
 
-        def follow(state, symbol):
+        def follow(state, transition):
             next = set()
             for substate in state:
-                if substate in self.map and symbol in self.map[substate]:
-                    next.add(self.map[substate][symbol])
+                if substate in self.map and transition in self.map[substate]:
+                    next.add(self.map[substate][transition])
 
                 # If one of our substates is final, then we can also consider
                 # transitions from the initial state of the original FSM.
                 if substate in self.finals \
                         and self.initial in self.map \
-                        and symbol in self.map[self.initial]:
-                    next.add(self.map[self.initial][symbol])
+                        and transition in self.map[self.initial]:
+                    next.add(self.map[self.initial][transition])
 
             if not next:
                 raise OblivionError
@@ -306,15 +425,15 @@ class FSM:
                     return True
             return False
 
-        def follow(current, symbol):
+        def follow(current, transition):
             next = []
             for (substate, iteration) in current:
                 if iteration < multiplier \
                         and substate in self.map \
-                        and symbol in self.map[substate]:
-                    next.append((self.map[substate][symbol], iteration))
+                        and transition in self.map[substate]:
+                    next.append((self.map[substate][transition], iteration))
                     # final of self? merge with initial on next iteration
-                    if self.map[substate][symbol] in self.finals:
+                    if self.map[substate][transition] in self.finals:
                         next.append((self.initial, iteration + 1))
             if len(next) == 0:
                 raise OblivionError
@@ -391,10 +510,10 @@ class FSM:
 
         initial = {0: self.initial}
 
-        def follow(current, symbol):
+        def follow(current, transition):
             next = {}
-            if 0 in current and current[0] in self.map and symbol in self.map[current[0]]:
-                next[0] = self.map[current[0]][symbol]
+            if 0 in current and current[0] in self.map and transition in self.map[current[0]]:
+                next[0] = self.map[current[0]][transition]
             return next
 
         # state is final unless the original was
@@ -404,27 +523,19 @@ class FSM:
         return crawl(alphabet, initial, final, follow)
 
     def isdisjoint(self, other: 'FSM') -> bool:
-        alphabet = self.alphabet & other.alphabet
+        alphabet, new_to_old = self.alphabet.intersect(other.alphabet)
         initial = (self.initial, other.initial)
 
         # dedicated function accepts a "superset" and returns the next "superset"
         # obtained by following this transition in the new FSM
-        def follow(current, symbol):
+        def follow(current, transition):
             ss, os = current
-            if symbol not in self.alphabet and anything_else in self.alphabet:
-                actual_symbol = anything_else
-            else:
-                actual_symbol = symbol
-            if ss in self.map and actual_symbol in self.map[ss]:
-                sn = self.map[ss][actual_symbol]
+            if ss in self.map and new_to_old[0][transition] in self.map[ss]:
+                sn = self.map[ss][new_to_old[0][transition]]
             else:
                 sn = None
-            if symbol not in other.alphabet and anything_else in other.alphabet:
-                actual_symbol = anything_else
-            else:
-                actual_symbol = symbol
-            if os in other.map and actual_symbol in other.map[os]:
-                on = other.map[os][actual_symbol]
+            if os in other.map and new_to_old[1][transition] in other.map[os]:
+                on = other.map[os][new_to_old[1][transition]]
             else:
                 on = None
             if not sn or not on:
@@ -457,12 +568,12 @@ class FSM:
 
         # Find every possible way to reach the current state-set
         # using this symbol.
-        def follow(current, symbol):
+        def follow(current, transition):
             next = frozenset([
                 prev
                 for prev in self.map
                 for state in current
-                if symbol in self.map[prev] and self.map[prev][symbol] == state
+                if transition in self.map[prev] and self.map[prev][transition] == state
             ])
             if len(next) == 0:
                 raise OblivionError
@@ -494,8 +605,8 @@ class FSM:
             if current in self.finals:
                 return True
             if current in self.map:
-                for symbol in self.map[current]:
-                    next = self.map[current][symbol]
+                for transition in self.map[current]:
+                    next = self.map[current][transition]
                     if next not in seen:
                         reachable.append(next)
                         seen.add(next)
@@ -546,13 +657,14 @@ class FSM:
         while i < len(strings):
             (cstring, cstate) = strings[i]
             if cstate in self.map:
-                for symbol in sorted(self.map[cstate], key=key):
-                    nstate = self.map[cstate][symbol]
-                    nstring = cstring + [symbol]
+                for transition in sorted(self.map[cstate]):
+                    nstate = self.map[cstate][transition]
                     if nstate in livestates:
-                        if nstate in self.finals:
-                            yield nstring
-                        strings.append((nstring, nstate))
+                        for symbol in sorted(self.alphabet.by_transition[transition]):
+                            nstring = cstring + [symbol]
+                            if nstate in self.finals:
+                                yield nstring
+                            strings.append((nstring, nstate))
             i += 1
 
     def __iter__(self):
@@ -621,8 +733,8 @@ class FSM:
                 if state in self.finals:
                     n += 1
                 if state in self.map:
-                    for symbol in self.map[state]:
-                        n += get_num_strings(self.map[state][symbol])
+                    for transition in self.map[state]:
+                        n += get_num_strings(self.map[state][transition]) * len(self.alphabet.by_transition[transition])
                 num_strings[state] = n
 
             else:
@@ -728,10 +840,10 @@ class FSM:
                     symbol = anything_else
 
                 # Missing transition = transition to dead state
-                if not (state in self.map and symbol in self.map[state]):
+                if not (state in self.map and self.alphabet[symbol] in self.map[state]):
                     raise OblivionError
 
-                state = self.map[state][symbol]
+                state = self.map[state][self.alphabet[symbol]]
 
             # OK so now we have consumed that string, use the new location as the
             # starting point.
@@ -761,7 +873,7 @@ def null(alphabet):
         initial=0,
         finals=set(),
         map={
-            0: dict([(symbol, 0) for symbol in alphabet]),
+            0: dict([(transition, 0) for transition in alphabet.by_transition]),
         },
         __no_validation__=True,
     )
@@ -788,23 +900,20 @@ def parallel(fsms, test):
         To determine whether a state in the larger FSM is final, pass all of the
         finality statuses (e.g. [True, False, False] to `test`.
     """
-    alphabet = frozenset().union(*[fsm.alphabet for fsm in fsms])
+    alphabet, new_to_old = Alphabet.union(*[fsm.alphabet for fsm in fsms])
 
     initial = {i: fsm.initial for (i, fsm) in enumerate(fsms)}
 
     # dedicated function accepts a "superset" and returns the next "superset"
     # obtained by following this transition in the new FSM
-    def follow(current, symbol, fsm_range=tuple(enumerate(fsms))):
+    def follow(current, new_transition, fsm_range=tuple(enumerate(fsms))):
         next = {}
         for i, f in fsm_range:
-            if symbol not in f.alphabet and anything_else in f.alphabet:
-                actual_symbol = anything_else
-            else:
-                actual_symbol = symbol
+            old_transition = new_to_old[i][new_transition]
             if i in current \
                     and current[i] in f.map \
-                    and actual_symbol in f.map[current[i]]:
-                next[i] = f.map[current[i]][actual_symbol]
+                    and new_to_old[i][old_transition] in f.map[current[i]]:
+                next[i] = f.map[current[i]][old_transition]
         if not next:
             raise OblivionError
         return next
@@ -818,62 +927,9 @@ def parallel(fsms, test):
     return crawl(alphabet, initial, final, follow)
 
 
-def crawl_reduced(alphabet, initial, final, follow, cat):
-    """
-        Given the above conditions and instructions, crawl a new unknown FSM,
-        mapping its states, final states and transitions. Return the new FSM.
-        This is a pretty powerful procedure which could potentially go on
-        forever if you supply an evil version of follow().
-    """
-
-    states = [initial]
-    finals = set()
-    map = {}
-
-    # iterate over a growing list
-    i = 0
-    while i < len(states):
-        state = states[i]
-
-        # add to finals
-        if final(state):
-            finals.add(i)
-
-        # compute map for this state
-        map[i] = {}
-        categories = cat(state)
-        for base_symbol, others in categories:
-            try:
-                next = follow(state, base_symbol)
-            except OblivionError:
-                # Reached an oblivion state. Don't list it.
-                continue
-            else:
-                try:
-                    j = states.index(next)
-                except ValueError:
-                    j = len(states)
-                    states.append(next)
-                map[i][base_symbol] = j
-                for s in others:
-                    map[i][s] = j
-
-        i += 1
-
-    return FSM(
-        alphabet=alphabet,
-        states=range(len(states)),
-        initial=0,
-        finals=finals,
-        map=map,
-        __no_validation__=True,
-    )
-
-
 def crawl_hash_no_result(alphabet, initial, final, follow):
     unvisited = {initial}
     visited = set()
-    sorted_alphabet = _sorted(alphabet)
 
     while unvisited:
         state = unvisited.pop()
@@ -883,21 +939,15 @@ def crawl_hash_no_result(alphabet, initial, final, follow):
         final(state)
 
         # compute map for this state
-        for symbol in sorted_alphabet:
+        for transition in alphabet.by_transition:
             try:
-                new = follow(state, symbol)
+                new = follow(state, transition)
             except OblivionError:
                 # Reached an oblivion state. Don't list it.
                 continue
             else:
                 if new not in visited:
                     unvisited.add(new)
-
-
-def _sorted(alphabet, *, __cache__={}):
-    if alphabet not in __cache__:
-        __cache__[alphabet] = sorted(alphabet, key=key)
-    return __cache__[alphabet]
 
 
 def crawl(alphabet, initial, final, follow):
@@ -911,7 +961,6 @@ def crawl(alphabet, initial, final, follow):
     states = [initial]
     finals = set()
     map = {}
-    sorted_alphabet = _sorted(alphabet)
 
     # iterate over a growing list
     i = 0
@@ -924,9 +973,9 @@ def crawl(alphabet, initial, final, follow):
 
         # compute map for this state
         map[i] = {}
-        for symbol in sorted_alphabet:
+        for transition in alphabet.by_transition:
             try:
-                next = follow(state, symbol)
+                next = follow(state, transition)
             except OblivionError:
                 # Reached an oblivion state. Don't list it.
                 continue
@@ -936,7 +985,7 @@ def crawl(alphabet, initial, final, follow):
                 except ValueError:
                     j = len(states)
                     states.append(next)
-                map[i][symbol] = j
+                map[i][transition] = j
 
         i += 1
 

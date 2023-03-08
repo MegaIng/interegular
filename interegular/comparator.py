@@ -3,10 +3,10 @@ from dataclasses import dataclass
 from itertools import combinations
 from typing import List, Tuple, Any, Dict, Iterable, Set, FrozenSet, Optional
 
-from interegular import InvalidSyntax
-from interegular.fsm import FSM
+from interegular import InvalidSyntax, REFlags
+from interegular.fsm import FSM, Alphabet
 from interegular.patterns import Pattern, Unsupported, parse_pattern
-from interegular.utils import logger, per_char_repr
+from interegular.utils import logger, soft_repr
 
 
 @dataclass
@@ -41,9 +41,9 @@ class ExampleCollision:
         """
         if len(intro) < len(indent):
             raise ValueError("Can't have intro be shorter than indent")
-        prefix = per_char_repr(self.prefix)
-        main_text = per_char_repr(self.main_text)
-        postfix = per_char_repr(self.postfix)
+        prefix = soft_repr(self.prefix)
+        main_text = soft_repr(self.main_text)
+        postfix = soft_repr(self.postfix)
         text = f"{prefix}{main_text}{postfix}"
         if len(text) != len(main_text):
             whitespace = ' ' * (len(intro) - len(indent) + len(prefix))
@@ -70,7 +70,7 @@ class Comparator:
         self._patterns = patterns
         if not patterns:  # `isdisjoint` can not be called anyway, so we don't need to create a valid state
             return
-        self._alphabet = frozenset.union(*(p.alphabet for p in patterns.values()))
+        self._alphabet = Alphabet.union(*(p.get_alphabet(REFlags(0)) for p in patterns.values()))[0]
         prefix_postfix_s = [p.prefix_postfix for p in patterns.values()]
         self._prefix_postfix = max(p[0] for p in prefix_postfix_s), max(p[1] for p in prefix_postfix_s)
         self._fsms: Dict[Any, FSM] = {}

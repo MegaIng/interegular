@@ -10,7 +10,7 @@ from enum import Flag, auto
 from textwrap import indent
 from typing import Iterable, FrozenSet, Optional, Tuple, Union
 
-from interegular.fsm import FSM, anything_else, epsilon
+from interegular.fsm import FSM, anything_else, epsilon, Alphabet
 from interegular.utils.simple_parser import SimpleParser, nomatch, NoMatch
 
 __all__ = ['parse_pattern', 'Pattern', 'Unsupported', 'InvalidSyntax', 'REFlags']
@@ -63,14 +63,15 @@ class _BasePattern(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def _get_alphabet(self) -> Iterable:
+    def _get_alphabet(self, flags: REFlags) -> Alphabet:
         raise NotImplementedError
 
-    @property
-    def alphabet(self) -> FrozenSet:
+    def get_alphabet(self, flags: REFlags) -> Alphabet:
         if not hasattr(self, '_alphabet_cache'):
-            super(_BasePattern, self).__setattr__('_alphabet_cache', frozenset(self._get_alphabet()))
-        return self._alphabet_cache
+            super(_BasePattern, self).__setattr__('_alphabet_cache', {})
+        if flags not in self._alphabet_cache:
+            self._alphabet_cache[flags] = self._get_alphabet(flags)
+        return self._alphabet_cache[flags]
 
     @abstractmethod
     def _get_prefix_postfix(self) -> Tuple[int, Optional[int]]:
@@ -112,10 +113,12 @@ class _CharGroup(_Repeatable):
     negated: bool
     __slots__ = 'chars', 'negated'
 
-    def _get_alphabet(self, alphabet=None) -> Iterable:
-        yield from (c.lower() for c in self.chars)
-        yield from (c.upper() for c in self.chars)
-        yield anything_else
+    def _get_alphabet(self, flags: REFlags) -> Alphabet:
+        if flags & REFlags.CASE_INSENSITIVE:
+            relevant = {*map(str.lower, self.chars), *map(str.upper, self.chars)}
+        else:
+            relevant = self.chars
+        return Alphabet.from_groups(relevant, {anything_else})
 
     def _get_prefix_postfix(self) -> Tuple[int, Optional[int]]:
         return 0, 0
@@ -123,37 +126,35 @@ class _CharGroup(_Repeatable):
     def _get_lengths(self) -> Tuple[int, Optional[int]]:
         return 1, 1
 
-    def to_fsm(self, alphabet=None, prefix_postfix=None, flags=None) -> FSM:
+    def to_fsm(self, alphabet=None, prefix_postfix=None, flags=REFlags(0)) -> FSM:
         if alphabet is None:
-            alphabet = self.alphabet
+            alphabet = self.get_alphabet(flags)
         if prefix_postfix is None:
             prefix_postfix = self.prefix_postfix
         if prefix_postfix != (0, 0):
             raise ValueError("Can not have prefix/postfix on CharGroup-level")
-        insensitive = False
-        if flags is not None:
-            insensitive = flags & REFlags.CASE_INSENSITIVE
-            flags &= ~REFlags.CASE_INSENSITIVE
-            flags &= ~REFlags.SINGLE_LINE
-            if flags:
-                raise Unsupported(flags)
+        insensitive = flags & REFlags.CASE_INSENSITIVE
+        flags &= ~REFlags.CASE_INSENSITIVE
+        flags &= ~REFlags.SINGLE_LINE
+        if flags:
+            raise Unsupported(flags)
         if insensitive:
             chars = frozenset({*(c.lower() for c in self.chars), *(c.upper() for c in self.chars)})
         else:
             chars = self.chars
 
-        # 0 is initial, 1 is final
+        # State: 0 is initial, 1 is final
 
         # If negated, make a singular FSM accepting any other characters
         if self.negated:
             mapping = {
-                0: {symbol: 1 for symbol in alphabet - chars},
+                0: {alphabet[symbol]: 1 for symbol in set(alphabet) - chars},
             }
 
         # If normal, make a singular FSM accepting only these characters
         else:
             mapping = {
-                0: {symbol: 1 for symbol in chars},
+                0: {alphabet[symbol]: 1 for symbol in chars},
             }
 
         return FSM(
@@ -180,24 +181,26 @@ def _combine_char_groups(*groups: _CharGroup, negate):
 @dataclass(frozen=True)
 class __DotCls(_Repeatable):
 
-    def to_fsm(self, alphabet=None, prefix_postfix=None, flags=None) -> FSM:
+    def to_fsm(self, alphabet=None, prefix_postfix=None, flags=REFlags(0)) -> FSM:
         if alphabet is None:
-            alphabet = self.alphabet
+            alphabet = self.get_alphabet(flags)
         if flags is None or not flags & REFlags.SINGLE_LINE:
-            chars = alphabet - {'\n'}
+            symbols = set(alphabet) - {'\n'}
         else:
-            chars = alphabet
+            symbols = alphabet
         return FSM(
             alphabet=alphabet,
             states={0, 1},
             initial=0,
             finals={1},
-            map={0: {symbol: 1 for symbol in chars}},
+            map={0: {alphabet[sym]: 1 for sym in symbols}},
         )
 
-    def _get_alphabet(self) -> Iterable:
-        yield '\n'
-        yield anything_else
+    def _get_alphabet(self, flags: REFlags) -> Alphabet:
+        if flags & REFlags.SINGLE_LINE:
+            return Alphabet.from_groups({anything_else})
+        else:
+            return Alphabet.from_groups({anything_else}, {'\n'})
 
     def _get_prefix_postfix(self) -> Tuple[int, Optional[int]]:
         return 0, 0
@@ -212,13 +215,13 @@ class __DotCls(_Repeatable):
 @dataclass(frozen=True)
 class __EmptyCls(_BasePattern):
 
-    def to_fsm(self, alphabet=None, prefix_postfix=None, flags=None) -> FSM:
+    def to_fsm(self, alphabet=None, prefix_postfix=None, flags=REFlags(0)) -> FSM:
         if alphabet is None:
-            alphabet = self.alphabet
+            alphabet = self.get_alphabet(flags)
         return epsilon(alphabet)
 
-    def _get_alphabet(self) -> Iterable:
-        yield anything_else
+    def _get_alphabet(self, flags: REFlags) -> Alphabet:
+        return Alphabet.from_groups({anything_else})
 
     def _get_prefix_postfix(self) -> Tuple[int, Optional[int]]:
         return 0, 0
@@ -264,8 +267,8 @@ class _Repeated(_BasePattern):
         return f"Repeated[{self.min}:{self.max if self.max is not None else ''}]:\n" \
             f"{indent(str(self.base), '    ')}"
 
-    def _get_alphabet(self) -> Iterable:
-        return self.base.alphabet
+    def _get_alphabet(self, flags: REFlags) -> Alphabet:
+        return self.base.get_alphabet(flags)
 
     def _get_prefix_postfix(self) -> Tuple[int, Optional[int]]:
         return self.base.prefix_postfix
@@ -274,9 +277,9 @@ class _Repeated(_BasePattern):
         l, h = self.base.lengths
         return l * self.min, (h * self.max if None not in (h, self.max) else None)
 
-    def to_fsm(self, alphabet=None, prefix_postfix=None, flags=None) -> FSM:
+    def to_fsm(self, alphabet=None, prefix_postfix=None, flags=REFlags(0)) -> FSM:
         if alphabet is None:
-            alphabet = self.alphabet
+            alphabet = self.get_alphabet(flags)
         if prefix_postfix is None:
             prefix_postfix = self.prefix_postfix
         if prefix_postfix != (0, 0):
@@ -308,9 +311,8 @@ class _NonCapturing:
     negate: bool
     __slots__ = 'inner', 'backwards', 'negate'
 
-    @property
-    def alphabet(self):
-        return self.inner.alphabet
+    def get_alphabet(self, flags: REFlags) -> Alphabet:
+        return self.inner.get_alphabet(flags)
 
     def simplify(self) -> '_NonCapturing':
         return self.__class__(self.inner.simplify(), self.backwards, self.negate)
@@ -325,10 +327,8 @@ class _Concatenation(_BasePattern):
     def __str__(self):
         return "Concatenation:\n" + "\n".join(indent(str(p), '  ') for p in self.parts)
 
-    def _get_alphabet(self) -> Iterable:
-        for p in self.parts:
-            yield from p.alphabet
-        yield anything_else
+    def _get_alphabet(self, flags: REFlags) -> Alphabet:
+        return Alphabet.union(*(p.get_alphabet(flags) for p in self.parts))[0]
 
     def _get_prefix_postfix(self) -> Tuple[int, Optional[int]]:
         pre = 0  # What is the longest a lookback could stick out over the beginning?
@@ -367,9 +367,9 @@ class _Concatenation(_BasePattern):
                 high = high + ph if None not in (high, ph) else None
         return low, high
 
-    def to_fsm(self, alphabet=None, prefix_postfix=None, flags=None) -> FSM:
+    def to_fsm(self, alphabet=None, prefix_postfix=None, flags=REFlags(0)) -> FSM:
         if alphabet is None:
-            alphabet = self.alphabet
+            alphabet = self.get_alphabet(flags)
         if prefix_postfix is None:
             prefix_postfix = self.prefix_postfix
         if prefix_postfix[0] < self.prefix_postfix[0] or prefix_postfix[1] < self.prefix_postfix[1]:
@@ -420,10 +420,9 @@ class Pattern(_Repeatable):
     def __str__(self):
         return "Pattern:\n" + "\n".join(indent(str(o), '  ') for o in self.options)
 
-    def _get_alphabet(self) -> Iterable:
-        for o in self.options:
-            yield from o.alphabet
-        yield anything_else
+    def _get_alphabet(self, flags: REFlags) -> Alphabet:
+        flags = _combine_flags(flags, self.added_flags, self.removed_flags)
+        return Alphabet.union(*(p.get_alphabet(flags) for p in self.options))[0]
 
     def _get_lengths(self) -> Tuple[int, Optional[int]]:
         low, high = None, 0
@@ -445,14 +444,12 @@ class Pattern(_Repeatable):
                 post = opost
         return pre, post
 
-    def to_fsm(self, alphabet=None, prefix_postfix=None, flags=None) -> FSM:
+    def to_fsm(self, alphabet=None, prefix_postfix=None, flags=REFlags(0)) -> FSM:
+        flags = _combine_flags(flags, self.added_flags, self.removed_flags)
         if alphabet is None:
-            alphabet = self.alphabet
+            alphabet = self.get_alphabet(flags)
         if prefix_postfix is None:
             prefix_postfix = self.prefix_postfix
-        if flags is None:
-            flags = REFlags(0)
-        flags = _combine_flags(flags, self.added_flags, self.removed_flags)
         return FSM.union(*(o.to_fsm(alphabet, prefix_postfix, flags) for o in self.options))
 
     def with_flags(self, added: REFlags, removed: REFlags = REFlags(0)) -> 'Pattern':
