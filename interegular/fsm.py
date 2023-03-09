@@ -89,7 +89,7 @@ class Alphabet(Mapping[Any, TransitionKey]):
     def __iter__(self):
         return iter(self._symbol_mapping)
 
-    def __init__(self, symbol_mapping: dict[Union[str, _AnythingElseCls], TransitionKey]):
+    def __init__(self, symbol_mapping: Dict[Union[str, _AnythingElseCls], TransitionKey]):
         self._symbol_mapping = symbol_mapping
         by_transition = defaultdict(list)
         for s, t in self._symbol_mapping.items():
@@ -108,7 +108,7 @@ class Alphabet(Mapping[Any, TransitionKey]):
     def __contains__(self, item):
         return item in self._symbol_mapping
 
-    def union(*alphabets: 'Alphabet') -> 'Tuple[Alphabet, tuple[dict[TransitionKey, TransitionKey], ...]]':
+    def union(*alphabets: 'Alphabet') -> 'Tuple[Alphabet, Tuple[Dict[TransitionKey, TransitionKey], ...]]':
         all_symbols = frozenset().union(*(a._symbol_mapping.keys() for a in alphabets))
         symbol_to_keys = {symbol: tuple(a[symbol] for a in alphabets) for symbol in all_symbols}
         keys_to_symbols = defaultdict(list)
@@ -128,7 +128,7 @@ class Alphabet(Mapping[Any, TransitionKey]):
     def from_groups(cls, *groups):
         return Alphabet({s: TransitionKey(i) for i, group in enumerate(groups) for s in group})
 
-    def intersect(self, other: 'Alphabet') -> 'tuple[Alphabet, tuple[dict[TransitionKey, TransitionKey], ...]]':
+    def intersect(self, other: 'Alphabet') -> 'Tuple[Alphabet, Tuple[Dict[TransitionKey, TransitionKey], ...]]':
         all_symbols = frozenset(self._symbol_mapping).intersection(other._symbol_mapping)
         symbol_to_keys = {symbol: tuple(a[symbol] for a in (self, other)) for symbol in all_symbols}
         keys_to_symbols = defaultdict(list)
@@ -912,7 +912,7 @@ def parallel(fsms, test):
             old_transition = new_to_old[i][new_transition]
             if i in current \
                     and current[i] in f.map \
-                    and new_to_old[i][old_transition] in f.map[current[i]]:
+                    and old_transition in f.map[current[i]]:
                 next[i] = f.map[current[i]][old_transition]
         if not next:
             raise OblivionError
