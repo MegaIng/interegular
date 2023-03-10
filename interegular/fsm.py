@@ -1,6 +1,7 @@
 """
     Finite state machine library, extracted from `greenery.fsm` and adapted by MegaIng
 """
+from _collections import deque
 from collections import defaultdict
 from functools import total_ordering
 from typing import Any, Set, Dict, Union, NewType, Mapping, Tuple, Iterable
@@ -623,7 +624,7 @@ class FSM:
         """
         return not self.islive(self.initial)
 
-    def strings(self):
+    def strings(self, limit_depth=None):
         """
             Generate strings (lists of symbols) that this FSM accepts. Since there may
             be infinitely many of these we use a generator instead of constructing a
@@ -631,6 +632,10 @@ class FSM:
             This procedure uses arbitrary amounts of memory but is very fast. There
             may be more efficient ways to do this, that I haven't investigated yet.
             You can use this in list comprehensions.
+
+            `limit_depth` controls how many attempts will be made to generate strings.
+            For complex FSM it can take minutes to actually find something.
+            If this isn't acceptable, provide a value to `limit_depth`
         """
 
         # Many FSMs have "dead states". Once you reach a dead state, you can no
@@ -642,7 +647,9 @@ class FSM:
         # state that this input string leads to. This means we don't have to run the
         # state machine from the very beginning every time we want to check a new
         # string.
-        strings = []
+        # We use a deque instead of a list since we append to the end and pop from
+        # the beginning
+        strings = deque()
 
         # Initial entry (or possibly not, in which case this is a short one)
         cstate = self.initial
@@ -654,8 +661,9 @@ class FSM:
 
         # Fixed point calculation
         i = 0
-        while i < len(strings):
-            (cstring, cstate) = strings[i]
+        while strings:
+            (cstring, cstate) = strings.popleft()
+            i += 1
             if cstate in self.map:
                 for transition in sorted(self.map[cstate]):
                     nstate = self.map[cstate][transition]
@@ -665,7 +673,8 @@ class FSM:
                             if nstate in self.finals:
                                 yield nstring
                             strings.append((nstring, nstate))
-            i += 1
+            if limit_depth is not None and i > limit_depth:
+                raise ValueError(f"Couldn't find an example within {limit_depth} attempts")
 
     def __iter__(self):
         """

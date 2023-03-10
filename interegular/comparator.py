@@ -4,7 +4,7 @@ from itertools import combinations
 from typing import List, Tuple, Any, Dict, Iterable, Set, FrozenSet, Optional
 
 from interegular import InvalidSyntax, REFlags
-from interegular.fsm import FSM, Alphabet
+from interegular.fsm import FSM, Alphabet, anything_else
 from interegular.patterns import Pattern, Unsupported, parse_pattern
 from interegular.utils import logger, soft_repr
 
@@ -51,6 +51,10 @@ class ExampleCollision:
             return f"{intro}{text}\n{indent}{whitespace}{pointers}"
         else:
             return f"{intro}{text}"
+
+    @property
+    def full_text(self):
+        return self.prefix + self.main_text + self.postfix
 
 
 class Comparator:
@@ -106,14 +110,15 @@ class Comparator:
             if not self.isdisjoint(a, b):
                 yield a, b
 
-    def get_example_overlap(self, a: Any, b: Any) -> ExampleCollision:
+    def get_example_overlap(self, a: Any, b: Any, limit_depth: int=None) -> ExampleCollision:
         pa, pb = self._patterns[a], self._patterns[b]
         fa, fb = self.get_fsm(a), self.get_fsm(b)
         intersection = fa.intersection(fb)
         try:
-            text = ''.join(next(intersection.strings()))
+            text = next(intersection.strings(limit_depth))
         except StopIteration:
             raise ValueError(f"No overlap between {a} and {b} exists")
+        text = ''.join(c if c != anything_else else '?' for c in text)
         needed_pre = max(pa.prefix_postfix[0], pb.prefix_postfix[0])
         needed_post = max(pa.prefix_postfix[1], pb.prefix_postfix[1])
         global_pre, global_post = self._prefix_postfix
