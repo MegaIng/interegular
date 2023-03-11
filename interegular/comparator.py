@@ -110,12 +110,12 @@ class Comparator:
             if not self.isdisjoint(a, b):
                 yield a, b
 
-    def get_example_overlap(self, a: Any, b: Any, limit_depth: int=None) -> ExampleCollision:
+    def get_example_overlap(self, a: Any, b: Any, max_iterations: int=None) -> ExampleCollision:
         pa, pb = self._patterns[a], self._patterns[b]
         fa, fb = self.get_fsm(a), self.get_fsm(b)
         intersection = fa.intersection(fb)
         try:
-            text = next(intersection.strings(limit_depth))
+            text = next(intersection.strings(max_iterations))
         except StopIteration:
             raise ValueError(f"No overlap between {a} and {b} exists")
         text = ''.join(c if c != anything_else else '?' for c in text)
@@ -133,6 +133,13 @@ class Comparator:
 
     def is_marked(self, a: Any, b: Any) -> bool:
         return frozenset({a, b}) in self._marked_pairs
+
+    @property
+    def marked_pairs(self):
+        return self._marked_pairs
+
+    def count_marked_pairs(self):
+        return len(self._marked_pairs)
 
     def mark(self, a: Any, b: Any):
         self._marked_pairs.add(frozenset({a, b}))

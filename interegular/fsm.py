@@ -624,7 +624,7 @@ class FSM:
         """
         return not self.islive(self.initial)
 
-    def strings(self, limit_depth=None):
+    def strings(self, max_iterations=None):
         """
             Generate strings (lists of symbols) that this FSM accepts. Since there may
             be infinitely many of these we use a generator instead of constructing a
@@ -633,9 +633,10 @@ class FSM:
             may be more efficient ways to do this, that I haven't investigated yet.
             You can use this in list comprehensions.
 
-            `limit_depth` controls how many attempts will be made to generate strings.
+            `max_iterations` controls how many attempts will be made to generate strings.
             For complex FSM it can take minutes to actually find something.
-            If this isn't acceptable, provide a value to `limit_depth`
+            If this isn't acceptable, provide a value to `max_iterations`.
+            The approximate time complexity is 0.3 seconds per 10_000 max_iterations
         """
 
         # Many FSMs have "dead states". Once you reach a dead state, you can no
@@ -673,8 +674,8 @@ class FSM:
                             if nstate in self.finals:
                                 yield nstring
                             strings.append((nstring, nstate))
-            if limit_depth is not None and i > limit_depth:
-                raise ValueError(f"Couldn't find an example within {limit_depth} attempts")
+            if max_iterations is not None and i > max_iterations:
+                raise ValueError(f"Couldn't find an example within {max_iterations} iterations")
 
     def __iter__(self):
         """
