@@ -110,22 +110,30 @@ class Comparator:
             if not self.isdisjoint(a, b):
                 yield a, b
 
-    def get_example_overlap(self, a: Any, b: Any, max_iterations: int=None) -> ExampleCollision:
+    def get_example_overlap(self, a: Any, b: Any, max_time: float = None) -> ExampleCollision:
         pa, pb = self._patterns[a], self._patterns[b]
-        fa, fb = self.get_fsm(a), self.get_fsm(b)
+        needed_pre = max(pa.prefix_postfix[0], pb.prefix_postfix[0])
+        needed_post = max(pa.prefix_postfix[1], pb.prefix_postfix[1])
+
+        # We use the optimal alphabet here instead of the general one since that
+        # massively improves performance by every metric.
+        alphabet = pa.get_alphabet(REFlags(0)).union(pb.get_alphabet(REFlags(0)))[0]
+        fa, fb = pa.to_fsm(alphabet, (needed_pre, needed_post)), pb.to_fsm(alphabet, (needed_pre, needed_post))
         intersection = fa.intersection(fb)
+        if max_time is None:
+            max_iterations = None
+        else:
+            # We calculate an approximation for that value of max_iterations
+            # that makes sure for this function to finish in under max_time seconds
+            # This values will heavily depend on CPU, python version, exact patterns
+            # and probably more factors, but this should generally be in the correct
+            # ballpark.
+            max_iterations = int((max_time - 0.09)/(1.4e-6 * len(alphabet)))
         try:
             text = next(intersection.strings(max_iterations))
         except StopIteration:
             raise ValueError(f"No overlap between {a} and {b} exists")
         text = ''.join(c if c != anything_else else '?' for c in text)
-        needed_pre = max(pa.prefix_postfix[0], pb.prefix_postfix[0])
-        needed_post = max(pa.prefix_postfix[1], pb.prefix_postfix[1])
-        global_pre, global_post = self._prefix_postfix
-        if needed_pre < global_pre:
-            text = text[global_pre - needed_pre:]
-        if needed_post < global_post:
-            text = text[:-(global_post - needed_post)]
         if needed_post > 0:
             return ExampleCollision(text[:needed_pre], text[needed_pre:-needed_post], text[-needed_post:])
         else:

@@ -636,7 +636,8 @@ class FSM:
             `max_iterations` controls how many attempts will be made to generate strings.
             For complex FSM it can take minutes to actually find something.
             If this isn't acceptable, provide a value to `max_iterations`.
-            The approximate time complexity is 0.3 seconds per 10_000 max_iterations
+            The approximate time complexity is
+            0.15 seconds per 10_000 iterations per 10 symbols
         """
 
         # Many FSMs have "dead states". Once you reach a dead state, you can no

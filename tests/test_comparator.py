@@ -53,7 +53,7 @@ def test_slow_example(comp, expected):
         start = perf_counter()
         assert not comp.isdisjoint(*collision)
         try:
-            example = comp.get_example_overlap(*collision, 10000)
+            example = comp.get_example_overlap(*collision, 0.5)
             assert comp.get_fsm(collision[0]).accepts(example)
             assert comp.get_fsm(collision[1]).accepts(example)
         except ValueError:
