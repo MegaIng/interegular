@@ -48,6 +48,33 @@ class SyntaxTestCase(unittest.TestCase):
         self.parse_invalid_syntax("[a-A]")
         self.parse_invalid_syntax("[\\w-A]")
 
+        self.parse_valid(r"[\w]", (*"abcdef012_",), ("", "..", *".*?",))
+        self.parse_valid(r"[\W]", (*".*?",), ("", "..", *"abcdef012_"))
+        self.parse_valid(r"[^\w]", (*".*?",), ("", "..", *"abcdef012_"))
+        self.parse_valid(r"[^\W]", (*"abcdef012_",), ("", "..", *".*?",))
+
+        self.parse_valid(r"[\wa-c]", (*"abcdef012_",), ("", "..", *".*?",))
+        self.parse_valid(r"[\Wa-c]", (*"abc.*?",), ("", "..", *"def012_"))
+        self.parse_valid(r"[^\wa-c]", (*".*?",), ("", "..", *"abcdef012_"))
+        self.parse_valid(r"[^\Wa-c]", (*"def012_",), ("", "..", *"abc.*?",))
+
+        self.parse_valid(r"[\wa-c?]", (*"abcdef012_?",), ("", "..", *".*",))
+        self.parse_valid(r"[\Wa-c?]", (*"abc.*?",), ("", "..", *"def012_"))
+        self.parse_valid(r"[^\wa-c?]", (*".*",), ("", "..", *"abcdef012_?"))
+        self.parse_valid(r"[^\Wa-c?]", (*"def012_",), ("", "..", *"abc.*?",))
+
+        w = "abc"
+        d = "012"
+        o = ".*?"
+        self.parse_valid(r"[\w\d]", w + d, o)
+        self.parse_valid(r"[\w\D]", w + d + o, "")
+        self.parse_valid(r"[\W\d]", d + o, w)
+        self.parse_valid(r"[\W\D]", o, w + d)
+        self.parse_valid(r"[^\w\d]", o, w + d)
+        self.parse_valid(r"[^\W\d]", w, d + o)
+        self.parse_valid(r"[^\w\D]", "", w + d + o)
+        self.parse_valid(r"[^\W\D]", w + d, o)
+
     def test_looks(self):
         self.parse_valid("(?=ab)...", ("ab?",), ("cd?", "ab"))
         self.parse_valid("(?!ab)...", ("cd?", "aaa"), ("ab?", "", "ab"))

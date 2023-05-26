@@ -60,3 +60,11 @@ def test_slow_example(comp, expected):
             pass
         end = perf_counter()
         assert end - start < 1
+
+
+def test_empty():
+    comp = Comparator({})
+    assert comp.marked_pairs == set()
+    assert comp.count_marked_pairs() == 0
+    for a, b in comp.check():
+        assert False, "We can't get here"

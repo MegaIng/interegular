@@ -172,10 +172,10 @@ class _CharGroup(_Repeatable):
 def _combine_char_groups(*groups: _CharGroup, negate):
     pos = set().union(*(g.chars for g in groups if not g.negated))
     neg = set().union(*(g.chars for g in groups if g.negated))
-    if negate:
-        return _CharGroup(frozenset(neg - pos), False)
+    if neg:
+        return _CharGroup(frozenset(neg - pos), not negate)
     else:
-        return _CharGroup(frozenset(pos - neg), False)
+        return _CharGroup(frozenset(pos - neg), negate)
 
 
 @dataclass(frozen=True)
@@ -697,7 +697,7 @@ class _ParsePattern(SimpleParser[Pattern]):
         self.static("]")
         if len(groups) == 1:
             f = tuple(groups)[0]
-            return _CharGroup(f.chars, negate)
+            return _CharGroup(f.chars, negate ^ f.negated)
         elif len(groups) == 0:
             return _CharGroup(frozenset({}), negate)
         else:

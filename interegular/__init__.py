@@ -19,6 +19,7 @@ def compare_regexes(*regexes: str) -> Iterable[Tuple[str, str]]:
     Checks the regexes for intersections. Returns all pairs it found
     """
     c = Comparator({r: parse_pattern(r) for r in regexes})
+    print(c._patterns)
     return c.check(regexes)
 
 
@@ -30,4 +31,4 @@ def compare_patterns(*ps: Pattern) -> Iterable[Tuple[Pattern, Pattern]]:
     return c.check(ps)
 
 
-__version__ = "0.3.0"
+__version__ = "0.3.2"

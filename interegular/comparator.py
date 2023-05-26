@@ -72,6 +72,7 @@ class Comparator:
 
     def __init__(self, patterns: Dict[Any, Pattern]):
         self._patterns = patterns
+        self._marked_pairs: Set[FrozenSet[Any]] = set()
         if not patterns:  # `isdisjoint` can not be called anyway, so we don't need to create a valid state
             return
         self._alphabet = Alphabet.union(*(p.get_alphabet(REFlags(0)) for p in patterns.values()))[0]
@@ -79,7 +80,6 @@ class Comparator:
         self._prefix_postfix = max(p[0] for p in prefix_postfix_s), max(p[1] for p in prefix_postfix_s)
         self._fsms: Dict[Any, FSM] = {}
         self._know_pairs: Dict[Tuple[Any, Any], bool] = {}
-        self._marked_pairs: Set[FrozenSet[Any]] = set()
 
     def get_fsm(self, a: Any) -> FSM:
         if a not in self._fsms:
