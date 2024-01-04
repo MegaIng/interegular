@@ -569,9 +569,6 @@ class FSM:
 
         # Speed up follow by pre-computing reverse-transition map
         reverse_map = {}
-        for state in self.states:
-            for transition in alphabet:
-                reverse_map.setdefault((state, transition), set())
         for state, transition_map in self.map.items():
             for transition, next_state in transition_map.items():
                 if (next_state, transition) not in reverse_map:
