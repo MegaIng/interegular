@@ -567,18 +567,23 @@ class FSM:
         # no other states get generated.
         initial = frozenset(self.finals)
 
+        # Speed up follow by pre-computing reverse-transition map
+        reverse_map = {}
+        for state, transition_map in self.map.items():
+            for transition, next_state in transition_map.items():
+                if (next_state, transition) not in reverse_map:
+                    reverse_map[(next_state, transition)] = set()
+                reverse_map[(next_state, transition)].add(state)
+
         # Find every possible way to reach the current state-set
         # using this symbol.
         def follow(current, transition):
-            next = frozenset([
-                prev
-                for prev in self.map
-                for state in current
-                if transition in self.map[prev] and self.map[prev][transition] == state
-            ])
-            if len(next) == 0:
+            next_states = set()
+            for state in current:
+                next_states.update(reverse_map.get((state, transition), set()))
+            if not next_states:
                 raise OblivionError
-            return next
+            return frozenset(next_states)
 
         # A state-set is final if the initial state is in it.
         def final(state):
