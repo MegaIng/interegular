@@ -31,4 +31,4 @@ def compare_patterns(*ps: Pattern) -> Iterable[Tuple[Pattern, Pattern]]:
     return c.check(ps)
 
 
-__version__ = "0.3.2"
+__version__ = "0.3.3"
