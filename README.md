@@ -2,9 +2,9 @@
 ***regex intersection checker***
 
 A library to check a subset of python regexes for intersections.
-Based on [grennery](https://github.com/qntm/greenery) by [@qntm](https://github.com/qntm). Adapted for [lark-parser](https://github.com/lark-parser/lark).
+Based on [greenery](https://github.com/qntm/greenery) by [@qntm](https://github.com/qntm). Adapted for [lark-parser](https://github.com/lark-parser/lark).
 
-The primary difference with `grennery` library is that `interegular` is focused on speed and compatibility with python re syntax, whereas grennery has a way to reconstruct a regex from a FSM, which `interegular` lacks.
+The primary difference with `greenery` library is that `interegular` is focused on speed and compatibility with python re syntax, whereas greenery has a way to reconstruct a regex from a FSM, which `interegular` lacks.
 
 
 ## Interface
