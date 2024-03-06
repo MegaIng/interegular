@@ -761,6 +761,15 @@ class FSM:
 
         return get_num_strings(self.initial)
 
+    def __bool__(self):
+        """
+            Check if the FSM accepts at least one string (i.e. is not empty). This
+            is better than checking len(.), which is computationally more expensive,
+            and will raise an OverflowError in case there are an infinite amount of
+            strings, whereas bool(.) will just return True.
+        """
+        return not self.empty()
+
     def __len__(self):
         """
             Consider the FSM as a set of strings and return the cardinality of that
