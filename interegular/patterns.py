@@ -54,6 +54,15 @@ def _combine_flags(base: REFlags, added: REFlags, removed: REFlags):
     return base
 
 
+def _one_char_upper(char: str) -> str:
+    """Convert char to upper, if multiple chars, return original char"""
+    assert len(char) == 1
+    upper_char = char.upper()
+    if len(upper_char) > 1:
+        return char
+    return upper_char
+
+
 @dataclass(frozen=True)
 class _BasePattern(ABC):
     __slots__ = '_alphabet_cache', '_prefix_cache', '_lengths_cache'
@@ -115,7 +124,7 @@ class _CharGroup(_Repeatable):
 
     def _get_alphabet(self, flags: REFlags) -> Alphabet:
         if flags & REFlags.CASE_INSENSITIVE:
-            relevant = {*map(str.lower, self.chars), *map(str.upper, self.chars)}
+            relevant = {*map(str.lower, self.chars), *map(_one_char_upper, self.chars)}
         else:
             relevant = self.chars
         return Alphabet.from_groups(relevant, {anything_else})
@@ -139,7 +148,7 @@ class _CharGroup(_Repeatable):
         if flags:
             raise Unsupported(flags)
         if insensitive:
-            chars = frozenset({*(c.lower() for c in self.chars), *(c.upper() for c in self.chars)})
+            chars = frozenset({*(c.lower() for c in self.chars), *(_one_char_upper(c) for c in self.chars)})
         else:
             chars = self.chars
 

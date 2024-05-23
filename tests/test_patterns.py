@@ -97,6 +97,14 @@ class SyntaxTestCase(unittest.TestCase):
         self.parse_unsupported("(?u)")
         self.parse_unsupported("(?x)")
 
+    def test_multichar(self):
+        fsm = parse_pattern("(?i:ß)").to_fsm()
+        strings = set([s[0] for s in fsm.strings()])
+        assert fsm.accepts("ß")
+        assert not fsm.accepts("SS")
+        assert "ß" in strings
+        assert "SS" not in strings
+
 
 if __name__ == '__main__':
     unittest.main()
